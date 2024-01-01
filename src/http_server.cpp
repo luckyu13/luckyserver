@@ -23,6 +23,13 @@ int HttpServer::init() {
 }
 
 int HttpServer::poll() {
+    if (is_poll()) {
+        return 1;
+    }
+    m_mutex.lock();
+    if (m_is_poll) return 1;
+    IsPoll _is_poll(m_is_poll);
+    m_mutex.unlock();
     if (m_listen_fd == -1) {
         int ret = init();
         if (ret != 0) {
@@ -59,8 +66,25 @@ int HttpServer::poll() {
                     int client_fd =
                     accept(m_listen_fd, (sockaddr*)&client_addr, &client_addr_len);
                     if (client_fd == -1) {
-                        std::cerr << "accept error" << std::endl;
-                        continue;
+                        int _errno = errno;
+                        if (_errno == EINVAL || _errno == EBADF) {
+                            std::cout << "listen stop..." << std::endl;
+                            stop_flag = true;
+                            break;
+                        } else if (_errno  == EMFILE || _errno == ENFILE) {
+                            std::cerr << "system resource not satisfy." << std::endl;
+                            err_flag = true;
+                            break;
+                        } else if (_errno == EINTR) {
+                            continue;
+                        } else if (_errno == ECONNRESET) {
+                            std::cout << "connection reset." << std::endl;
+                            continue;
+                        } else {
+                            std::cerr << "other error" << _errno << " : " << strerror(_errno) << " lisen_fd= " << m_listen_fd << std::endl;
+                            err_flag = true;
+                            break;
+                        }                        
                     }
                     int flags = fcntl(client_fd, F_GETFL, 0);
                     fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
@@ -103,9 +127,22 @@ int HttpServer::poll() {
     return 0;
 }
 
+int HttpServer::poll_in_thread() {
+    if (is_poll()) {
+        return 1;
+    }
+    m_thread_poll = std::thread([this]() {
+        this->poll();
+    });
+    return 0;
+}
+
 int HttpServer::stop() {
     if (m_listen_fd != -1) {
         close(m_listen_fd);
+    }
+    if (m_thread_poll.joinable()) {
+        m_thread_poll.join();
     }
     return 0;
 }
@@ -172,4 +209,19 @@ int HttpServer::init_listen_fd() {
     std::cout << "server is listening on " << m_bind_ip << ": "
                 << m_bind_port << std::endl;
     return 0;
+}
+
+bool HttpServer::is_poll() {
+    AutoLock lock(m_mutex);
+    return m_is_poll;
+}
+
+void HttpServer::set_poll() {
+    AutoLock lock(m_mutex);
+    m_is_poll = true;
+}
+
+void HttpServer::unset_poll() {
+    AutoLock lock(m_mutex);
+    m_is_poll = false;
 }

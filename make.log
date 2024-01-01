@@ -1,0 +1,2 @@
+g++ *.cpp -o server -I.
+Makefile:4: recipe for target 'linux' failed

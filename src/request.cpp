@@ -27,3 +27,13 @@ std::string Request::get_header(const std::string& key) {
     }
     return "";
 }
+
+void Request::reset() {
+    m_method.clear();
+    m_proto.clear();
+    m_uri.clear();
+    m_headers.clear();
+    m_payload.clear();
+    m_payload.resize(IO_BUFFER_DAEFUALT_SIZE);
+    m_status = WAIT_REQUEST_HEAD;
+}

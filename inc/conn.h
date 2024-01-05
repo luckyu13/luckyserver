@@ -13,6 +13,7 @@
 
 class Router;
 class Conn;
+class Response;
 
 class ConnManage {
 public:
@@ -51,6 +52,9 @@ public:
 
 protected:
     void process_http_recv_data();
+    void send_response(Response& response);
+    
+private:
 
 private:
     int         m_socket_fd;
@@ -60,6 +64,8 @@ private:
     std::string m_remote_ip;
     uint16_t    m_remote_port;
     ConnManage& m_conn_mgr;
+    Request     m_request;
+    Response    m_response;
 };
 
 

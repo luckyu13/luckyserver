@@ -73,10 +73,25 @@ void IOBuffer::del(size_t start_pos, size_t end_pos) {
 }
 
 void IOBuffer::resize(size_t new_capacity) {
+    if (new_capacity == m_capacity) return;
+    if (new_capacity == 0) {
+        delete m_data;
+        m_data = nullptr;
+        m_capacity = 0;
+        m_len = 0;
+        return;
+    }
     char* new_data = new char[new_capacity];
     memset(new_data, 0, new_capacity);
-    memcpy(new_data, m_data, m_len);
-    delete m_data;
+    if (m_data != nullptr) {
+        memcpy(new_data, m_data, m_len);
+        delete m_data;
+    }
     m_capacity = new_capacity;
     m_data = new_data;
+}
+
+void IOBuffer::clear() {
+    memset(m_data, 0, m_len);
+    m_len = 0;
 }

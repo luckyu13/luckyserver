@@ -7,14 +7,16 @@
 #include "utils.h"
 
 Conn::Conn(int socket_fd, Router* router, ConnManage& mgr): 
-    m_socket_fd(socket_fd), m_router(router), m_conn_mgr(mgr) {
+    m_socket_fd(socket_fd), m_router(router), m_conn_mgr(mgr), 
+    m_request(IO_BUFFER_DAEFUALT_SIZE), m_response(&m_request) {
 #ifdef DEBUG
     std::cout << "New Conn socket = " << m_socket_fd << std::endl;
 #endif
 }
 
 Conn::Conn(int socket_fd, Router* router, const std::string r_ip, uint16_t r_port, ConnManage& mgr):
-    m_socket_fd(socket_fd), m_router(router), m_remote_ip(r_ip), m_remote_port(r_port), m_conn_mgr(mgr) {
+    m_socket_fd(socket_fd), m_router(router), m_remote_ip(r_ip), m_remote_port(r_port), m_conn_mgr(mgr), 
+    m_request(IO_BUFFER_DAEFUALT_SIZE), m_response(&m_request) {
 #ifdef DEBUG
     std::cout << "New Conn socket = " << m_socket_fd << " addres: [" << m_remote_ip << ": " << m_remote_port << "]" << std::endl;
 #endif
@@ -36,6 +38,7 @@ ssize_t Conn::write(const char* buf, size_t len) {
 }
 
 ssize_t Conn::read_data() {
+    AutoLock lock(m_mutex);
     char buf[1024];
     memset(buf, 0, 1024);
     size_t total_len = 0;
@@ -54,49 +57,78 @@ ssize_t Conn::read_data() {
     }
     // Todo process this: return -1 
     std::cout << "process readed data." << std::endl;
+    lock.unlock();
     process_http_recv_data();
     if (r_len == -1 && total_len == 0) return -1;
     return total_len;
 }
 
+void Conn::send_response(Response& response) {
+    std::string head = response.head();
+    this->write(head.data(), head.length());
+    if (response.has_body()) {
+        auto body = response.body();
+        this->write(body.data(), body.len());
+    }
+}
+
 void Conn::process_http_recv_data() {
     AutoLock lock(m_mutex);
-    Request request;
-    HttpParseResultCode parse_code = HttpParse::Parse(*this, request);
+    HttpParseResultCode parse_code = HttpParse::parse(*this, m_request);
     switch (parse_code)
     {
     case HttpParseOk: {
-        handle_func_type handle_func = m_router->get_handle_func(request.uri());
+        handle_func_type handle_func = m_router->get_handle_func(m_request.uri(), m_request.method());
         if (!handle_func) {
-            std::cout << "uri: [" << request.uri() << "] not resgister" << std::endl;
+            std::cout << "uri: [" << m_request.uri() << "] not resgister" << std::endl;
+            m_response.reset();
+            m_response.write_status_code(StatusCode::NotFound);
+            send_response(m_response);
+            m_response.reset();
             return;
         }
-        Response resp(*this, &request);
-        handle_func(request, resp);
-        break;
+        handle_func(m_request, m_response);
+        send_response(m_response);
+        m_response.reset();
+        std::cout << m_request.get_header("connection") << std::endl;
+        if (!str_eq(m_request.get_header("connection"), "keep-alive")) {
+            std::cout << "connect is not keep-alive, colse socket_fd ..." << std::endl;
+            m_conn_mgr.del_conn(m_socket_fd);
+        } else {
+            m_request.reset();
+        }
+        return;
+    }
+    case HttpBadRequest: {
+        ;
     }
     case HttpParseBadData: {
         std::cout << "bad recv data" << std::endl;
-        close(m_socket_fd);
-        break;
+        m_response.reset();
+        m_response.write_status_code(StatusCode::BadRequest);
+        send_response(m_response);
+        m_response.reset();
+        m_conn_mgr.del_conn(m_socket_fd);
+        return;
     }
     case HttpParseDataNotReady: {
         std::cout << "data not ready" << std::endl;
-        break;
+        return;
     }
     case HttpParseExceptErr: {
         std::cout << "except error" << std::endl;
-        close(m_socket_fd);
-        break;
+        m_response.reset();
+        m_response.write_status_code(StatusCode::InternalServerError);
+        send_response(m_response);
+        m_response.reset();
+        m_request.reset();
+        m_conn_mgr.del_conn(m_socket_fd);
+        return;
     }
     default: {
         std::cout << "undifine code" << std::endl;
-        break;
+        return;
     }
-    }
-    if (parse_code == HttpParseOk && request.get_header("connection") != "keep-alive") {
-        std::cout << "connect is not keep-alive, colse socket_fd ..." << std::endl;
-        m_conn_mgr.del_conn(m_socket_fd);
     }
 }
 
@@ -114,6 +146,7 @@ void ConnManage::del_conn(int client_fd) {
     auto conn = get_conn(client_fd);
     if (conn != nullptr) {
         delete conn;
+        conn = nullptr;
         m_conn_map.erase(client_fd);
     }
 }

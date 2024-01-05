@@ -9,7 +9,7 @@
 void SayHello(Request& request, Response& response) {
     std::cout << "************SayHello***************" << std::endl;
     char buf[] = "hello world";
-    response.write_head(StatusCode::OK);
+    response.write_status_code(StatusCode::OK);
     response.add_header("Content-type", "text/html");
     response.write_body(buf, sizeof(buf));
 }
@@ -22,20 +22,22 @@ void PostJsonString(Request& request, Response& response) {
     for (auto it: request.header()) {
         std::cout << it.first << ": " << it.second << "\n";
     }
-    if (request.has_header("Content-Length")) {
+    if (request.has_header("Content-Length") || request.has_header("transfer-encoding")) {
         std::string payload = std::string(request.payload_ptr(), request.payload_len());
         std::cout << "recv payload: \n" << payload << std::endl;
+        payload += "hhhh";
         response.write_body(payload.c_str(), payload.length());
         response.add_header("Content-Type", "text/plain");
     }
-    response.write_head(StatusCode::OK);
+    response.write_status_code(StatusCode::OK);
 }
 
 int main(int argc, char ** argv) {
     HttpServer server;
-    server.router().add_handle_func("/say_hello", SayHello);
-    server.router().add_handle_func("/postdata", PostJsonString);
+    server.router().add_handle_func("/say_hello", "GET", SayHello);
+    server.router().add_handle_func("/postdata", "POST", PostJsonString);
     server.init();
+    server.poll();
     std::thread thread([&server]() {
         server.poll();
     });

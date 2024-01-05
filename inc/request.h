@@ -7,7 +7,6 @@
 
 #include "io_buf.h"
 
-
 typedef std::map<std::string, std::string> header_type;
 
 class Request {
@@ -18,9 +17,11 @@ public:
         m_uri(uri),
         m_proto(proto),
         m_headers(header),
-        m_payload(m_payload)
+        m_payload(m_payload),
+        m_status(Request::WAIT_REQUEST_HEAD)
         {}
-    Request(): m_payload(IOBuffer(0)) {}
+    Request(): m_payload(IOBuffer(0)), m_status(Request::WAIT_REQUEST_HEAD)  {}
+    Request(size_t payload_size): m_payload(payload_size), m_status(Request::WAIT_REQUEST_HEAD) {}
 
 public:
     void set_method(const std::string& method) {  m_method = method; }
@@ -38,6 +39,16 @@ public:
         return true;
     }
     std::string get_header(const std::string& key);
+    void reset();
+
+public:
+    friend class HttpParse;
+enum ReqStatus {
+    WAIT_REQUEST_HEAD = 1,
+    WAIT_REQUEST_PAYLOAD_DATA = 2,
+    WAIT_REQUEST_CHUNKEDD_PAYLOAD_DATA = 3,
+    COMPLETE_REQUEST = 4,
+};
 
 public:
     const std::string method() const { return m_method; }
@@ -47,6 +58,7 @@ public:
     const IOBuffer& payload() const { return m_payload; }
     const char* payload_ptr() { return m_payload.data(); }
     size_t payload_len() { return m_payload.len(); }
+    Request::ReqStatus status() const { return m_status; }
 
 private:
     std::string m_method;
@@ -54,4 +66,5 @@ private:
     std::string m_proto;
     header_type m_headers;
     IOBuffer    m_payload;
+    ReqStatus  m_status;
 };

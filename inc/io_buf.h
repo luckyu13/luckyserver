@@ -16,6 +16,8 @@ public:
     void add(const char* buf, size_t len);
     void del(size_t len);
     void del(size_t start_pos, size_t end_pos);
+    void resize(size_t new_capacity);
+    void clear();
 
 public:
     IOBuffer& operator=(const IOBuffer& o);
@@ -24,9 +26,6 @@ public:
     const char* data() { return m_data; }
     size_t capacity() const { return m_capacity; }
     size_t len() const { return m_len; }
-
-protected:
-    void resize(size_t new_capacity);
 
 private:
     char* m_data;
